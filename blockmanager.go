@@ -677,18 +677,11 @@ func (b *blockManager) getCheckpointedCFHeaders(checkpoints []*chainhash.Hash,
 		// prior one, so we'll fetch headers in batches using the
 		// checkpoints as a guide.
 		startHeightRange := uint32(
-			currentInterval * wire.CFCheckptInterval,
+			currentInterval*wire.CFCheckptInterval + 1,
 		)
 		endHeightRange := uint32(
 			(currentInterval + 1) * wire.CFCheckptInterval,
 		)
-
-		// If this is the very first interval, then we'll skip a block
-		// as we already have the filter for the genesis block, so we
-		// know it's filter hash.
-		if currentInterval == 0 {
-			startHeightRange++
-		}
 
 		log.Tracef("Checkpointed cfheaders request start_range=%v, "+
 			"end_range=%v", startHeightRange, endHeightRange)
@@ -785,11 +778,8 @@ func (b *blockManager) getCheckpointedCFHeaders(checkpoints []*chainhash.Hash,
 
 			// Find the first and last height for the blocks
 			// represented by this message.
-			startHeight := checkPointIndex * wire.CFCheckptInterval
+			startHeight := checkPointIndex*wire.CFCheckptInterval + 1
 			lastHeight := startHeight + wire.CFCheckptInterval
-			if checkPointIndex == 0 {
-				startHeight++
-			}
 
 			log.Debugf("Got cfheaders from height=%v to height=%v",
 				startHeight, lastHeight)
