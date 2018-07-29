@@ -280,13 +280,6 @@ func (s *ChainService) Rescan(options ...RescanOption) error {
 	s.blockManager.newFilterHeadersMtx.Lock()
 	for s.blockManager.filterHeaderTip < uint32(curStamp.Height) {
 		s.blockManager.newFilterHeadersSignal.Wait()
-
-		// While we're awake, check to see if we need to exit.
-		select {
-		case <-ro.quit:
-			return nil
-		default:
-		}
 	}
 	s.blockManager.newFilterHeadersMtx.Unlock()
 
