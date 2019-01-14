@@ -250,7 +250,7 @@ func newBlockManager(s *ChainService) (*blockManager, error) {
 }
 
 // Start begins the core block handler which processes block and inv messages.
-func (b *blockManager) Start() {
+func (b *blockManager) Start(firstPeerConnect <-chan struct{}) {
 	// Already started?
 	if atomic.AddInt32(&b.started, 1) != 1 {
 		return
@@ -259,7 +259,16 @@ func (b *blockManager) Start() {
 	log.Trace("Starting block manager")
 	b.wg.Add(2)
 	go b.blockHandler()
-	go b.cfHandler()
+	go func() {
+		defer b.wg.Done()
+
+		select {
+		case <-firstPeerConnect:
+			b.cfHandler()
+		case <-b.quit:
+			return
+		}
+	}()
 }
 
 // Stop gracefully shuts down the block manager by stopping all asynchronous
@@ -411,7 +420,6 @@ func (b *blockManager) cfHandler() {
 	// done.
 	defer func() {
 		log.Trace("Committed filter header handler done")
-		b.wg.Done()
 	}()
 
 	var (
