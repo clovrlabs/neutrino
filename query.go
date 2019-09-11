@@ -48,6 +48,10 @@ var (
 	// QueryEncoding specifies the default encoding (witness or not) for
 	// `getdata` and other similar messages.
 	QueryEncoding = wire.WitnessEncoding
+
+	// MaxCFilterBatchSize specified the max number of compact filters
+	// requested in a single batch.
+	MaxCFilterBatchSize = int64(100)
 )
 
 // QueryAccess is an interface that gives acces to query a set of peers in
@@ -943,7 +947,7 @@ func (s *ChainService) prepareCFiltersQuery(blockHash chainhash.Hash,
 	// Forward batch, fetch as many of the following filters as possible.
 	case forwardBatch:
 		startHeight = int64(height)
-		stopHeight = startHeight + wire.MaxGetCFiltersReqRange - 1
+		stopHeight = startHeight + MaxCFilterBatchSize - 1
 
 		// We need a longer timeout, since we are going to receive more
 		// than a single response.
@@ -952,7 +956,7 @@ func (s *ChainService) prepareCFiltersQuery(blockHash chainhash.Hash,
 	// Reverse batch, fetch as many of the preceding filters as possible.
 	case reverseBatch:
 		stopHeight = int64(height)
-		startHeight = stopHeight - wire.MaxGetCFiltersReqRange + 1
+		startHeight = stopHeight - MaxCFilterBatchSize + 1
 
 		// We need a longer timeout, since we are going to receive more
 		// than a single response.
