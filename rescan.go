@@ -558,9 +558,10 @@ func rescan(chain ChainSource, options ...RescanOption) error {
 
 		// Otherwise, we'll attempt to fetch the filter to retrieve the
 		// relevant transactions and notify them.
-		queryOptions := NumRetries(0)
+		queryOptions := append([]QueryOption(nil), ro.queryOptions...)
+		queryOptions = append(queryOptions, NumRetries(0))
 		blockFilter, err := chain.GetCFilter(
-			newStamp.Hash, wire.GCSFilterRegular, queryOptions,
+			newStamp.Hash, wire.GCSFilterRegular, queryOptions...,
 		)
 		if err != nil {
 			// If the query failed, then this either means that we
