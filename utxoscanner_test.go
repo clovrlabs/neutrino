@@ -195,11 +195,11 @@ func TestDequeueAtHeight(t *testing.T) {
 	})
 
 	// Add the requests in order of their block heights.
-	req100000, err := scanner.Enqueue(makeTestInputWithScript(), 100000)
+	req100000, err := scanner.Enqueue(makeTestInputWithScript(), 100000, func(height uint32) {})
 	if err != nil {
 		t.Fatalf("unable to enqueue scan request: %v", err)
 	}
-	req100001, err := scanner.Enqueue(makeTestInputWithScript(), 100001)
+	req100001, err := scanner.Enqueue(makeTestInputWithScript(), 100001, func(height uint32) {})
 	if err != nil {
 		t.Fatalf("unable to enqueue scan request: %v", err)
 	}
@@ -229,11 +229,11 @@ func TestDequeueAtHeight(t *testing.T) {
 	}
 
 	// Now, add the requests in order of their block heights.
-	req100000, err = scanner.Enqueue(makeTestInputWithScript(), 100000)
+	req100000, err = scanner.Enqueue(makeTestInputWithScript(), 100000, func(height uint32) {})
 	if err != nil {
 		t.Fatalf("unable to enqueue scan request: %v", err)
 	}
-	req100001, err = scanner.Enqueue(makeTestInputWithScript(), 100001)
+	req100001, err = scanner.Enqueue(makeTestInputWithScript(), 100001, func(height uint32) {})
 	if err != nil {
 		t.Fatalf("unable to enqueue scan request: %v", err)
 	}
@@ -258,11 +258,11 @@ func TestDequeueAtHeight(t *testing.T) {
 	}
 
 	// Now, add the requests out of order wrt. their block heights.
-	req100001, err = scanner.Enqueue(makeTestInputWithScript(), 100001)
+	req100001, err = scanner.Enqueue(makeTestInputWithScript(), 100001, func(height uint32) {})
 	if err != nil {
 		t.Fatalf("unable to enqueue scan request: %v", err)
 	}
-	req100000, err = scanner.Enqueue(makeTestInputWithScript(), 100000)
+	req100000, err = scanner.Enqueue(makeTestInputWithScript(), 100000, func(height uint32) {})
 	if err != nil {
 		t.Fatalf("unable to enqueue scan request: %v", err)
 	}
@@ -291,11 +291,11 @@ func TestDequeueAtHeight(t *testing.T) {
 	}
 
 	// Again, add the requests out of order wrt. their block heights.
-	req100001, err = scanner.Enqueue(makeTestInputWithScript(), 100001)
+	req100001, err = scanner.Enqueue(makeTestInputWithScript(), 100001, func(height uint32) {})
 	if err != nil {
 		t.Fatalf("unable to enqueue scan request: %v", err)
 	}
-	req100000, err = scanner.Enqueue(makeTestInputWithScript(), 100000)
+	req100000, err = scanner.Enqueue(makeTestInputWithScript(), 100000, func(height uint32) {})
 	if err != nil {
 		t.Fatalf("unable to enqueue scan request: %v", err)
 	}
@@ -344,7 +344,7 @@ func TestUtxoScannerScanBasic(t *testing.T) {
 		scanErr     error
 	)
 
-	req, err := scanner.Enqueue(makeTestInputWithScript(), 100000)
+	req, err := scanner.Enqueue(makeTestInputWithScript(), 100000, func(height uint32) {})
 	if err != nil {
 		t.Fatalf("unable to enqueue utxo scan request: %v", err)
 	}
@@ -399,7 +399,7 @@ func TestUtxoScannerScanAddBlocks(t *testing.T) {
 		scanErr     error
 	)
 
-	req, err := scanner.Enqueue(makeTestInputWithScript(), 99999)
+	req, err := scanner.Enqueue(makeTestInputWithScript(), 99999, func(height uint32) {})
 	if err != nil {
 		t.Fatalf("unable to enqueue scan request: %v", err)
 	}
@@ -464,11 +464,11 @@ func TestUtxoScannerCancelRequest(t *testing.T) {
 	defer scanner.Stop()
 
 	// Add the requests in order of their block heights.
-	req100000, err := scanner.Enqueue(makeTestInputWithScript(), 100000)
+	req100000, err := scanner.Enqueue(makeTestInputWithScript(), 100000, func(height uint32) {})
 	if err != nil {
 		t.Fatalf("unable to enqueue scan request: %v", err)
 	}
-	req100001, err := scanner.Enqueue(makeTestInputWithScript(), 100001)
+	req100001, err := scanner.Enqueue(makeTestInputWithScript(), 100001, func(height uint32) {})
 	if err != nil {
 		t.Fatalf("unable to enqueue scan request: %v", err)
 	}

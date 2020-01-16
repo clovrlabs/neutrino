@@ -76,11 +76,14 @@ type ChainSource interface {
 	Subscribe(bestHeight uint32) (*blockntfns.Subscription, error)
 }
 
+type scanProgressHandler func(lastProcessedBlock uint32)
+
 // rescanOptions holds the set of functional parameters for Rescan.
 type rescanOptions struct {
 	queryOptions []QueryOption
 
-	ntfn rpcclient.NotificationHandlers
+	ntfn                       rpcclient.NotificationHandlers
+	utxoScannerProgressHandler scanProgressHandler
 
 	startTime  time.Time
 	startBlock *headerfs.BlockStamp
@@ -117,6 +120,16 @@ func QueryOptions(options ...QueryOption) RescanOption {
 func NotificationHandlers(ntfn rpcclient.NotificationHandlers) RescanOption {
 	return func(ro *rescanOptions) {
 		ro.ntfn = ntfn
+	}
+}
+
+// UtxoScannerProgressHandler specified a handler to be used when the utxo
+// scanner reports its progress.
+func UtxoScannerProgressHandler(
+	handler scanProgressHandler) RescanOption {
+
+	return func(ro *rescanOptions) {
+		ro.utxoScannerProgressHandler = handler
 	}
 }
 
@@ -1430,7 +1443,7 @@ func (s *ChainService) GetUtxo(options ...RescanOption) (*SpendReport, error) {
 	}
 
 	req, err := s.utxoScanner.Enqueue(
-		&ro.watchInputs[0], uint32(ro.startBlock.Height),
+		&ro.watchInputs[0], uint32(ro.startBlock.Height), ro.utxoScannerProgressHandler,
 	)
 	if err != nil {
 		return nil, err
