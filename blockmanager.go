@@ -2852,9 +2852,9 @@ func (b *blockManager) Notifications() <-chan blockntfns.BlockNtfn {
 func (b *blockManager) NotificationsSinceHeight(
 	height uint32) ([]blockntfns.BlockNtfn, uint32, error) {
 
-	b.newFilterHeadersMtx.RLock()
-	bestHeight := b.filterHeaderTip
-	b.newFilterHeadersMtx.RUnlock()
+	b.newHeadersMtx.RLock()
+	bestHeight := b.headerTip
+	b.newHeadersMtx.RUnlock()
 
 	// If a height of 0 is provided by the caller, then a backlog of
 	// notifications is not needed.
