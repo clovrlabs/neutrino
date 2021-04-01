@@ -1132,15 +1132,10 @@ func (s *ChainService) sendTransaction(tx *wire.MsgTx, options ...QueryOption) e
 				rejections[*broadcastErr]++
 			}
 		},
-		// Default to 500ms timeout. Default for queryAllPeers is a
+		// Default to 60s timeout. Default for queryAllPeers is a
 		// single try.
-		//
-		// TODO(wilmer): Is this timeout long enough assuming a
-		// worst-case round trip? Also needs to take into account that
-		// the other peer must query its own state to determine whether
-		// it should accept the transaction.
 		append(
-			[]QueryOption{Timeout(time.Millisecond * 500)},
+			[]QueryOption{Timeout(time.Second * 60)},
 			options...,
 		)...,
 	)
