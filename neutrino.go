@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -575,6 +576,10 @@ type Config struct {
 	// and be maintained as persistent peers that support the Rest API.
 	RestPeers []string
 
+	// RestClient is a http.Client that shoudl be used as the client for
+	// calls if rest peers are spesified.
+	RestClient *http.Client
+
 	// Dialer is an optional function closure that will be used to
 	// establish outbound TCP connections. If specified, then the
 	// connection manager will use this in place of net.Dial for all
@@ -678,6 +683,9 @@ type ChainService struct { // nolint:maligned
 
 	// restPeers is a slice of peers that suppoorts the rest API.
 	restPeers []string
+
+	// restClient is a http client for call to the restpeers.
+	restClient *http.Client
 
 	// TODO: Add a map for more granular exclusion?
 	mtxCFilter sync.Mutex
@@ -965,6 +973,11 @@ func NewChainService(cfg Config) (*ChainService, error) {
 			} else {
 				s.restPeers = append(s.restPeers, restAddr)
 			}
+		}
+
+		// If the user has spesified a http client we will use that.
+		if cfg.RestClient != nil {
+			s.restClient = cfg.RestClient
 		}
 	}
 

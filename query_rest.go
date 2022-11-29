@@ -24,7 +24,13 @@ func (s *ChainService) queryRestPeers(
 	results := make(chan *wire.MsgCFilter, endBlock-startBlock+1)
 	quit := make(chan struct{})
 	// We'll need a http client in order to query the host
-	client := &http.Client{Timeout: QueryTimeout}
+	// first we check a client is spesified.
+	var client *http.Client
+	if s.restClient != nil {
+		client = s.restClient
+	} else {
+		client = &http.Client{Timeout: QueryTimeout}
+	}
 
 	// We use 10 workers
 	for i := 0; i < numWorkers; i++ {
