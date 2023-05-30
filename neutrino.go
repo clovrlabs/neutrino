@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -75,7 +76,7 @@ var (
 	// DefaultFilterCacheSize is the size (in bytes) of filters neutrino
 	// will keep in memory if no size is specified in the neutrino.Config.
 	// Since we utilize the cache during batch filter fetching, it is
-	// beneficial if it is able to to keep a whole batch. The current batch
+	// beneficial if it is able to keep a whole batch. The current batch
 	// size is 1000, so we default to 30 MB, which can fit about 1450 to
 	// 2300 mainnet filters.
 	DefaultFilterCacheSize uint64 = 3120 * 10 * 1000
@@ -165,7 +166,7 @@ type ServerPeer struct {
 	connReq        *connmgr.ConnReq
 	server         *ChainService
 	persistent     bool
-	knownAddresses *lru.Cache
+	knownAddresses *lru.Cache[string, *cachedAddr]
 	quit           chan struct{}
 
 	// The following map of subcribers is used to subscribe to messages
@@ -183,11 +184,11 @@ type ServerPeer struct {
 
 // NewServerPeer returns a new ServerPeer instance. The peer needs to be set by
 // the caller.
-func NewServerPeer(s *ChainService, isPersistent bool) *ServerPeer {
+func newServerPeer(s *ChainService, isPersistent bool) *ServerPeer {
 	return &ServerPeer{
 		server:           s,
 		persistent:       isPersistent,
-		knownAddresses:   lru.NewCache(5000),
+		knownAddresses:   lru.NewCache[string, *cachedAddr](5000),
 		quit:             make(chan struct{}),
 		recvSubscribers:  make(map[spMsgSubscription]struct{}),
 		recvSubscribers2: make(map[msgSubscription]struct{}),
@@ -570,6 +571,10 @@ type Config struct {
 	// and be maintained as persistent peers.
 	AddPeers []string
 
+	// RestPeers is a slice of host that should be connected to on startup,
+	// and be maintained as persistent peers that support the Rest API.
+	RestPeers []string
+
 	// Dialer is an optional function closure that will be used to
 	// establish outbound TCP connections. If specified, then the
 	// connection manager will use this in place of net.Dial for all
@@ -588,7 +593,7 @@ type Config struct {
 
 	// BlockCache is an LRU block cache. If none is provided then the a new
 	// one will be instantiated.
-	BlockCache *lru.Cache
+	BlockCache *lru.Cache[wire.InvVect, *CacheableBlock]
 
 	// BlockCacheSize indicates the size (in bytes) of blocks the block
 	// cache will hold in memory at most. If a BlockCache is provided then
@@ -626,6 +631,12 @@ type peerSubscription struct {
 	cancel <-chan struct{}
 }
 
+type restPeer struct {
+	URL         string
+	failures    uint
+	lastFailure time.Time
+}
+
 // ChainService is instantiated with functional options.
 type ChainService struct { // nolint:maligned
 	// The following variables must only be used atomically.
@@ -640,8 +651,8 @@ type ChainService struct { // nolint:maligned
 	RegFilterHeaders *headerfs.FilterHeaderStore
 	persistToDisk    bool
 
-	FilterCache *lru.Cache
-	BlockCache  *lru.Cache
+	FilterCache *lru.Cache[FilterCacheKey, *CacheableFilter]
+	BlockCache  *lru.Cache[wire.InvVect, *CacheableBlock]
 
 	// queryPeers will be called to send messages to one or more peers,
 	// expecting a response.
@@ -670,6 +681,9 @@ type ChainService struct { // nolint:maligned
 	// peerSubscribers is a slice of active peer subscriptions, that we
 	// will notify each time a new peer is connected.
 	peerSubscribers []*peerSubscription
+
+	// restPeers is a slice of peers that suppoorts the rest API.
+	restPeers []restPeer
 
 	// TODO: Add a map for more granular exclusion?
 	mtxCFilter sync.Mutex
@@ -766,7 +780,9 @@ func NewChainService(cfg Config) (*ChainService, error) {
 	if cfg.FilterCacheSize != 0 {
 		filterCacheSize = cfg.FilterCacheSize
 	}
-	s.FilterCache = lru.NewCache(filterCacheSize)
+	s.FilterCache = lru.NewCache[FilterCacheKey, *CacheableFilter](
+		filterCacheSize,
+	)
 
 	if cfg.BlockCache != nil {
 		s.BlockCache = cfg.BlockCache
@@ -775,7 +791,9 @@ func NewChainService(cfg Config) (*ChainService, error) {
 		if cfg.BlockCacheSize != 0 {
 			blockCacheSize = cfg.BlockCacheSize
 		}
-		s.BlockCache = lru.NewCache(blockCacheSize)
+		s.BlockCache = lru.NewCache[wire.InvVect, *CacheableBlock](
+			blockCacheSize,
+		)
 	}
 
 	s.BlockHeaders, err = headerfs.NewBlockHeaderStore(
@@ -945,6 +963,22 @@ func NewChainService(cfg Config) (*ChainService, error) {
 		permanentPeers = cfg.AddPeers
 	}
 
+	// Adding rest peers to chainservice if spesified in config.
+	if len(cfg.RestPeers) > 0 {
+		// Iterating thought restpeer defined in the config
+		// and checking if the url is ok.
+		log.Infof("Rest peers are not empty, querying with restpeers")
+		for _, restAddr := range cfg.RestPeers {
+			_, err := url.Parse(restAddr)
+			if err != nil {
+				log.Debugf("error unable to parse address: %w", err)
+				continue
+			} else {
+				s.restPeers = append(s.restPeers, restPeer{URL: restAddr, failures: 0, lastFailure: time.Time{}})
+			}
+		}
+	}
+
 	for _, addr := range permanentPeers {
 		addr := addr
 
@@ -998,7 +1032,7 @@ func (s *ChainService) BestBlock() (*headerfs.BlockStamp, error) {
 		return nil, err
 	}
 
-	// Filter headers might lag behind block headers, so we can can fetch a
+	// Filter headers might lag behind block headers, so we can fetch a
 	// previous block header if the filter headers are not caught up.
 	if filterHeight < bestHeight {
 		bestHeight = filterHeight
@@ -1468,8 +1502,8 @@ func (s *ChainService) SendTransaction(tx *wire.MsgTx) error {
 	return s.broadcaster.Broadcast(tx)
 }
 
-// NewPeerConfig returns the configuration for the given ServerPeer.
-func NewPeerConfig(sp *ServerPeer) *peer.Config {
+// newPeerConfig returns the configuration for the given ServerPeer.
+func newPeerConfig(sp *ServerPeer) *peer.Config {
 	return &peer.Config{
 		Listeners: peer.MessageListeners{
 			OnVersion:   sp.OnVersion,
@@ -1537,8 +1571,8 @@ func (s *ChainService) outboundPeerConnected(c *connmgr.ConnReq, conn net.Conn) 
 		return
 	}
 
-	sp := NewServerPeer(s, c.Permanent)
-	p, err := peer.NewOutboundPeer(NewPeerConfig(sp), peerAddr)
+	sp := newServerPeer(s, c.Permanent)
+	p, err := peer.NewOutboundPeer(newPeerConfig(sp), peerAddr)
 	if err != nil {
 		log.Debugf("Cannot create outbound peer %s: %s", c.Addr, err)
 		disconnect()
@@ -1568,8 +1602,8 @@ func (s *ChainService) peerDoneHandler(sp *ServerPeer) {
 	close(sp.quit)
 }
 
-// UpdatePeerHeights updates the heights of all peers who have have announced
-// the latest connected main chain block, or a recognized orphan. These height
+// UpdatePeerHeights updates the heights of all peers who have announced the
+// latest connected main chain block, or a recognized orphan. These height
 // updates allow us to dynamically refresh peer heights, ensuring sync peer
 // selection has access to the latest block heights for each peer.
 func (s *ChainService) UpdatePeerHeights(latestBlkHash *chainhash.Hash,
@@ -1626,7 +1660,7 @@ func (s *ChainService) Start() error {
 	return nil
 }
 
-// IsStarted returns true if Start() was called at least once
+// IsStarted returns true if Start() was called at least once.
 func (s *ChainService) IsStarted() bool {
 	return s.started > 0
 }

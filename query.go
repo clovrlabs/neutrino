@@ -19,6 +19,7 @@ import (
 )
 
 var (
+
 	// QueryTimeout specifies how long to wait for a peer to answer a
 	// query.
 	QueryTimeout = time.Second * 10
@@ -551,7 +552,7 @@ checkResponses:
 func (s *ChainService) getFilterFromCache(blockHash *chainhash.Hash,
 	filterType filterdb.FilterType) (*gcs.Filter, error) {
 
-	cacheKey := cache.FilterCacheKey{
+	cacheKey := FilterCacheKey{
 		BlockHash:  *blockHash,
 		FilterType: filterType,
 	}
@@ -561,18 +562,18 @@ func (s *ChainService) getFilterFromCache(blockHash *chainhash.Hash,
 		return nil, err
 	}
 
-	return filterValue.(*cache.CacheableFilter).Filter, nil
+	return filterValue.Filter, nil
 }
 
 // putFilterToCache inserts a given filter in ChainService's FilterCache.
 func (s *ChainService) putFilterToCache(blockHash *chainhash.Hash,
 	filterType filterdb.FilterType, filter *gcs.Filter) (bool, error) { // nolint:unparam
 
-	cacheKey := cache.FilterCacheKey{
+	cacheKey := FilterCacheKey{
 		BlockHash:  *blockHash,
 		FilterType: filterType,
 	}
-	return s.FilterCache.Put(cacheKey, &cache.CacheableFilter{Filter: filter})
+	return s.FilterCache.Put(cacheKey, &CacheableFilter{Filter: filter})
 }
 
 // cfiltersQuery is a struct that holds all the information necessary to
@@ -597,7 +598,7 @@ func (q *cfiltersQuery) queryMsg() wire.Message {
 }
 
 // prepareCFiltersQuery creates a cfiltersQuery that can be used to fetch a
-// CFilter fo the given block hash.
+// CFilter for the given block hash.
 func (s *ChainService) prepareCFiltersQuery(blockHash chainhash.Hash,
 	filterType wire.FilterType, options ...QueryOption) (
 	*cfiltersQuery, error) {
@@ -896,27 +897,35 @@ func (s *ChainService) GetCFilter(blockHash chainhash.Hash,
 		return nil, err
 	}
 
+	// We will first check if the node supports rest API
+	// and try to get the filter from there
+
 	// With all the necessary items retrieved, we'll launch our concurrent
 	// query to the set of connected peers.
 	log.Debugf("Fetching filters for heights=[%v, %v], stophash=%v",
 		query.startHeight, query.stopHeight, query.stopHash)
 
+	// First attempting to query the rest API and if optimistic batching is
+	// we'll query for blocks
+	// if node does not support the rest API, we'll query using bitcoin's p2p
 	go func() {
 		defer s.mtxCFilter.Unlock()
 		defer close(query.filterChan)
 
-		s.queryPeers(
-			// Send a wire.MsgGetCFilters.
-			query.queryMsg(),
+		if len(s.restPeers) > 0 {
+			s.queryRestPeers(query)
+		} else {
+			s.queryPeers(
+				// Send a wire.MsgGetCFilters.
+				query.queryMsg(),
 
-			// Check responses and if we get one that matches, end
-			// the query early.
-			func(_ *ServerPeer, resp wire.Message, quit chan<- struct{}) {
-				s.handleCFiltersResponse(query, resp, quit)
-			},
-			query.options...,
-		)
-
+				// Check responses and if we get one that matches, end
+				// the query early.
+				func(_ *ServerPeer, resp wire.Message, quit chan<- struct{}) {
+					s.handleCFiltersResponse(query, resp, quit)
+				},
+				query.options...)
+		}
 		// If there are elements left to receive, the query failed.
 		if len(query.headerIndex) > 0 {
 			numFilters := query.stopHeight - query.startHeight + 1
@@ -986,7 +995,7 @@ func (s *ChainService) GetBlock(blockHash chainhash.Hash,
 	// If the block is already in the cache, we can return it immediately.
 	blockValue, err := s.BlockCache.Get(*inv)
 	if err == nil && blockValue != nil {
-		return blockValue.(*cache.CacheableBlock).Block, err
+		return blockValue.Block, err
 	}
 	if err != nil && err != cache.ErrElementNotFound {
 		return nil, err
@@ -1070,7 +1079,7 @@ func (s *ChainService) GetBlock(blockHash chainhash.Hash,
 	}
 
 	// Add block to the cache before returning it.
-	_, err = s.BlockCache.Put(*inv, &cache.CacheableBlock{Block: foundBlock})
+	_, err = s.BlockCache.Put(*inv, &CacheableBlock{Block: foundBlock})
 	if err != nil {
 		log.Warnf("couldn't write block to cache: %v", err)
 	}

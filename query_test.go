@@ -19,7 +19,6 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/lightninglabs/neutrino/cache"
 	"github.com/lightninglabs/neutrino/cache/lru"
 	"github.com/lightninglabs/neutrino/filterdb"
 	"github.com/lightninglabs/neutrino/headerfs"
@@ -153,7 +152,7 @@ func genRandFilter(numElements uint32, t *testing.T) (
 	}
 
 	// Convert into CacheableFilter and compute Size.
-	c := &cache.CacheableFilter{Filter: filter}
+	c := &CacheableFilter{Filter: filter}
 	s, err := c.Size()
 	if err != nil {
 		t.Fatalf("unable to create random filter: %v", err)
@@ -192,7 +191,9 @@ func TestCacheBigEnoughHoldsAllFilter(t *testing.T) {
 	b3, f3, s3 := genRandFilter(100, t)
 
 	cs := &ChainService{
-		FilterCache: lru.NewCache(s1 + s2 + s3),
+		FilterCache: lru.NewCache[FilterCacheKey, *CacheableFilter](
+			s1 + s2 + s3,
+		),
 	}
 
 	// Insert those filters into the cache making sure nothing gets evicted.
@@ -226,7 +227,9 @@ func TestBigFilterEvictsEverything(t *testing.T) {
 	b3, f3, s3 := genRandFilter(10, t)
 
 	cs := &ChainService{
-		FilterCache: lru.NewCache(s3),
+		FilterCache: lru.NewCache[FilterCacheKey, *CacheableFilter](
+			s3,
+		),
 	}
 
 	// Insert the smaller filters.
@@ -267,7 +270,7 @@ func TestBlockCache(t *testing.T) {
 		}
 		headers.WriteHeaders(header)
 
-		sz, _ := (&cache.CacheableBlock{Block: b}).Size()
+		sz, _ := (&CacheableBlock{Block: b}).Size()
 		if i < len(blocks)/2 {
 			size += sz
 		}
@@ -276,7 +279,9 @@ func TestBlockCache(t *testing.T) {
 	// Set up a ChainService with a BlockCache that can fit the first half
 	// of the blocks.
 	cs := &ChainService{
-		BlockCache:   lru.NewCache(size),
+		BlockCache: lru.NewCache[wire.InvVect, *CacheableBlock](
+			size,
+		),
 		BlockHeaders: headers,
 		chainParams: chaincfg.Params{
 			PowLimit: maxPowLimit,
